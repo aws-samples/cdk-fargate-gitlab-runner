@@ -1,0 +1,727 @@
+{
+  "Resources": {
+    "gitlabrunnercachebucketD02416E3": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "aws:kms"
+              }
+            }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        }
+      },
+      "UpdateReplacePolicy": "Delete",
+      "DeletionPolicy": "Delete",
+      "Metadata": {
+        "aws:cdk:path": "GitlabrunnerBastionStack/gitlabrunnercachebucket/Resource"
+      }
+    },
+    "gitlabrunnercachebucketPolicy6A584577": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": {
+          "Ref": "gitlabrunnercachebucketD02416E3"
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "gitlabrunnercachebucketD02416E3",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "gitlabrunnercachebucketD02416E3",
+                          "Arn"
+                        ]
+                      },
+                      "/*"
+                    ]
+                  ]
+                }
+              ]
+            }
+          ],
+          "Version": "2012-10-17"
+        }
+      },
+      "Metadata": {
+        "aws:cdk:path": "GitlabrunnerBastionStack/gitlabrunnercachebucket/Policy/Resource"
+      }
+    },
+    "GitlabBastionRoleCBCD2C51": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ec2.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AmazonEC2RoleforSSM"
+              ]
+            ]
+          },
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/AmazonECS_FullAccess"
+              ]
+            ]
+          }
+        ],
+        "Policies": [
+          {
+            "PolicyDocument": {
+              "Statement": [
+                {
+                  "Action": "ssm:GetParameter",
+                  "Effect": "Allow",
+                  "Resource": "arn:aws:ssm:eu-west-1:748602279978:parameter/Gitlab/*"
+                }
+              ],
+              "Version": "2012-10-17"
+            },
+            "PolicyName": "AllowSSMRead"
+          },
+          {
+            "PolicyDocument": {
+              "Statement": [
+                {
+                  "Action": [
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:DescribeLogStreams",
+                    "logs:PutLogEvents"
+                  ],
+                  "Effect": "Allow",
+                  "Resource": "arn:aws:logs:eu-west-1:748602279978:log-group:/Gitlab/*"
+                }
+              ],
+              "Version": "2012-10-17"
+            },
+            "PolicyName": "AllowListOrgUnitParent"
+          },
+          {
+            "PolicyDocument": {
+              "Statement": [
+                {
+                  "Action": "secretsmanager:GetSecretValue",
+                  "Effect": "Allow",
+                  "Resource": "arn:aws:secretsmanager:eu-west-1:748602279978:secret:/Gitlab/Runner/LZ/Token*"
+                }
+              ],
+              "Version": "2012-10-17"
+            },
+            "PolicyName": "AllowSecreManagerRetrieve"
+          }
+        ]
+      },
+      "Metadata": {
+        "aws:cdk:path": "GitlabrunnerBastionStack/GitlabBastionRole/Resource"
+      }
+    },
+    "GitlabBastionRoleDefaultPolicy630017ED": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "cloudformation:SignalResource",
+              "Effect": "Allow",
+              "Resource": {
+                "Ref": "AWS::StackId"
+              }
+            },
+            {
+              "Action": [
+                "ssm:DescribeParameters",
+                "ssm:GetParameters",
+                "ssm:GetParameter",
+                "ssm:GetParameterHistory"
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition"
+                    },
+                    ":ssm:eu-west-1:748602279978:parameter/",
+                    {
+                      "Ref": "CloudWatchAgentConfigF6F50B7E"
+                    }
+                  ]
+                ]
+              }
+            },
+            {
+              "Action": [
+                "cloudformation:DescribeStackResource",
+                "cloudformation:SignalResource"
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Ref": "AWS::StackId"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "GitlabBastionRoleDefaultPolicy630017ED",
+        "Roles": [
+          {
+            "Ref": "GitlabBastionRoleCBCD2C51"
+          }
+        ]
+      },
+      "Metadata": {
+        "aws:cdk:path": "GitlabrunnerBastionStack/GitlabBastionRole/DefaultPolicy/Resource"
+      }
+    },
+    "GitlabExecutionRoleFE69E778": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+              ]
+            ]
+          }
+        ]
+      },
+      "Metadata": {
+        "aws:cdk:path": "GitlabrunnerBastionStack/GitlabExecutionRole/Resource"
+      }
+    },
+    "GitlabTaskRoleF5F511B8": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+              ]
+            ]
+          }
+        ],
+        "Policies": [
+          {
+            "PolicyDocument": {
+              "Statement": [
+                {
+                  "Action": [
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:DescribeLogStreams",
+                    "logs:PutLogEvents"
+                  ],
+                  "Effect": "Allow",
+                  "Resource": "arn:aws:logs:eu-west-1:748602279978:log-group:/Gitlab/*"
+                }
+              ],
+              "Version": "2012-10-17"
+            },
+            "PolicyName": "AllowListOrgUnitParent"
+          }
+        ]
+      },
+      "Metadata": {
+        "aws:cdk:path": "GitlabrunnerBastionStack/GitlabTaskRole/Resource"
+      }
+    },
+    "bastionsg4EE455E1": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "GitlabrunnerBastionStack/bastion_sg",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "Description": "from 0.0.0.0/0:443",
+            "FromPort": 443,
+            "IpProtocol": "tcp",
+            "ToPort": 443
+          }
+        ],
+        "VpcId": "vpc-12345"
+      },
+      "Metadata": {
+        "aws:cdk:path": "GitlabrunnerBastionStack/bastion_sg/Resource"
+      }
+    },
+    "bastionsgfromGitlabrunnerBastionStackbastionsgCEBCF562229F4DC550": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "IpProtocol": "tcp",
+        "Description": "from GitlabrunnerBastionStackbastionsgCEBCF562:22",
+        "FromPort": 22,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "bastionsg4EE455E1",
+            "GroupId"
+          ]
+        },
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "bastionsg4EE455E1",
+            "GroupId"
+          ]
+        },
+        "ToPort": 22
+      },
+      "Metadata": {
+        "aws:cdk:path": "GitlabrunnerBastionStack/bastion_sg/from GitlabrunnerBastionStackbastionsgCEBCF562:22"
+      }
+    },
+    "bastionsgtoGitlabrunnerBastionStackbastionsgCEBCF5622230643454": {
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "Properties": {
+        "GroupId": {
+          "Fn::GetAtt": [
+            "bastionsg4EE455E1",
+            "GroupId"
+          ]
+        },
+        "IpProtocol": "tcp",
+        "Description": "to GitlabrunnerBastionStackbastionsgCEBCF562:22",
+        "DestinationSecurityGroupId": {
+          "Fn::GetAtt": [
+            "bastionsg4EE455E1",
+            "GroupId"
+          ]
+        },
+        "FromPort": 22,
+        "ToPort": 22
+      },
+      "Metadata": {
+        "aws:cdk:path": "GitlabrunnerBastionStack/bastion_sg/to GitlabrunnerBastionStackbastionsgCEBCF562:22"
+      }
+    },
+    "GitlabrunnerAsgInstanceProfile20BBBD72": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "Roles": [
+          {
+            "Ref": "GitlabBastionRoleCBCD2C51"
+          }
+        ]
+      },
+      "Metadata": {
+        "aws:cdk:path": "GitlabrunnerBastionStack/GitlabrunnerAsg/InstanceProfile"
+      }
+    },
+    "GitlabrunnerAsgLaunchConfigA726B582": {
+      "Type": "AWS::AutoScaling::LaunchConfiguration",
+      "Properties": {
+        "ImageId": {
+          "Ref": "SsmParameterValueawsserviceamiamazonlinuxlatestamzn2amihvmx8664gp2C96584B6F00A464EAD1953AFF4B05118Parameter"
+        },
+        "InstanceType": "t3.nano",
+        "BlockDeviceMappings": [
+          {
+            "DeviceName": "/dev/sda1",
+            "Ebs": {
+              "DeleteOnTermination": true,
+              "Encrypted": true,
+              "VolumeSize": 10
+            }
+          }
+        ],
+        "IamInstanceProfile": {
+          "Ref": "GitlabrunnerAsgInstanceProfile20BBBD72"
+        },
+        "SecurityGroups": [
+          {
+            "Fn::GetAtt": [
+              "bastionsg4EE455E1",
+              "GroupId"
+            ]
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash\n# fingerprint: 6f690eb1fcff0a0b\n(\n  set +e\n  /opt/aws/bin/cfn-init -v --region ",
+                {
+                  "Ref": "AWS::Region"
+                },
+                " --stack ",
+                {
+                  "Ref": "AWS::StackName"
+                },
+                " --resource GitlabrunnerAsgASGA57287BF -c default\n  /opt/aws/bin/cfn-signal -e $? --region ",
+                {
+                  "Ref": "AWS::Region"
+                },
+                " --stack ",
+                {
+                  "Ref": "AWS::StackName"
+                },
+                " --resource GitlabrunnerAsgASGA57287BF\n  cat /var/log/cfn-init.log >&2\n)"
+              ]
+            ]
+          }
+        }
+      },
+      "DependsOn": [
+        "GitlabBastionRoleDefaultPolicy630017ED",
+        "GitlabBastionRoleCBCD2C51"
+      ],
+      "Metadata": {
+        "aws:cdk:path": "GitlabrunnerBastionStack/GitlabrunnerAsg/LaunchConfig"
+      }
+    },
+    "GitlabrunnerAsgASGA57287BF": {
+      "Type": "AWS::AutoScaling::AutoScalingGroup",
+      "Properties": {
+        "MaxSize": "1",
+        "MinSize": "1",
+        "LaunchConfigurationName": {
+          "Ref": "GitlabrunnerAsgLaunchConfigA726B582"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "PropagateAtLaunch": true,
+            "Value": "GitlabrunnerBastionStack/GitlabrunnerAsg"
+          }
+        ],
+        "VPCZoneIdentifier": []
+      },
+      "CreationPolicy": {
+        "ResourceSignal": {
+          "Count": 1
+        }
+      },
+      "UpdatePolicy": {
+        "AutoScalingScheduledAction": {
+          "IgnoreUnmodifiedGroupSizeProperties": true
+        }
+      },
+      "Metadata": {
+        "aws:cdk:path": "GitlabrunnerBastionStack/GitlabrunnerAsg/ASG",
+        "AWS::CloudFormation::Init": {
+          "configSets": {
+            "default": [
+              "setup",
+              "packages",
+              "config",
+              "register"
+            ]
+          },
+          "setup": {
+            "commands": {
+              "add_gitlab_runner_repo": {
+                "command": "curl -s https://packages.gitlab.com/install/repositories/runner/gitlab-runner/script.rpm.sh|  bash"
+              }
+            }
+          },
+          "packages": {
+            "packages": {
+              "yum": {
+                "gitlab-runner-14.2.0-1": []
+              }
+            }
+          },
+          "config": {
+            "files": {
+              "/etc/gitlab-runner/config.toml": {
+                "content": {
+                  "Fn::Sub": [
+                    "concurrent = ${__CONCURRENT_JOBS__}\ncheck_interval = 0   ",
+                    {
+                      "__ACCOUNT_ID__": "748602279978",
+                      "__REGION__": "eu-west-1",
+                      "__ECS_CLUSTER__": "GitlabrunnerBastionStack-cluser",
+                      "__SUBNET_ID__": "",
+                      "__CONCURRENT_JOBS__": "10",
+                      "__SECURITY_GROUP_ID__": {
+                        "Fn::GetAtt": [
+                          "bastionsg4EE455E1",
+                          "GroupId"
+                        ]
+                      },
+                      "__TASK_DEFINITION__": {
+                        "Ref": "GitlabrunnerBastionStackamazonlinux"
+                      },
+                      "__SSH_USERNAME__": "root"
+                    }
+                  ]
+                },
+                "encoding": "plain",
+                "mode": "0644",
+                "owner": "root",
+                "group": "root"
+              },
+              "/etc/gitlab-runner/fargate.toml": {
+                "content": {
+                  "Fn::Sub": [
+                    "LogLevel = \"info\"\nLogFormat = \"text\"\nLogFile = \"fargate.log\"\n\n[Fargate]\n  Cluster = \"${__ECS_CLUSTER__}\"\n  Region = \"${__REGION__}\"\n  Subnet = \"${__SUBNET_ID__}\"\n  SecurityGroup = \"${__SECURITY_GROUP_ID__}\"\n  TaskDefinition = \"${__TASK_DEFINITION__}\"\n\n[TaskMetadata]\n  Directory = \"/opt/gitlab-runner/metadata\"\n\n[SSH]\n  Username = \"${__SSH_USERNAME__}\"\n  Port = 22",
+                    {
+                      "__ACCOUNT_ID__": "748602279978",
+                      "__REGION__": "eu-west-1",
+                      "__ECS_CLUSTER__": "GitlabrunnerBastionStack-cluser",
+                      "__SUBNET_ID__": "",
+                      "__CONCURRENT_JOBS__": "10",
+                      "__SECURITY_GROUP_ID__": {
+                        "Fn::GetAtt": [
+                          "bastionsg4EE455E1",
+                          "GroupId"
+                        ]
+                      },
+                      "__TASK_DEFINITION__": {
+                        "Ref": "GitlabrunnerBastionStackamazonlinux"
+                      },
+                      "__SSH_USERNAME__": "root"
+                    }
+                  ]
+                },
+                "encoding": "plain",
+                "mode": "0644",
+                "owner": "root",
+                "group": "root"
+              },
+              "/etc/systemd/system/gitlab-runner.service": {
+                "content": "[Unit]\nDescription=GitLab Runner\nAfter=syslog.target network.target\nConditionFileIsExecutable=/bin/gitlab-runner\n\n[Service]\nStartLimitInterval=5\nStartLimitBurst=10\nExecStart=/bin/gitlab-runner \"run\" \"--working-directory\" \"/home/gitlab-runner\" \"--config\" \"/etc/gitlab-runner/config.toml\" \"--service\" \"gitlab-runner\" \"--syslog\" \"--user\" \"gitlab-runner\"\nExecStop=/bin/gitlab-runner \"stop\"\nExecStopPost=/bin/gitlab-runner \"unregister\" \"--all-runners\"\nRestart=always\nRestartSec=120\n\n[Install]\nWantedBy=multi-user.target",
+                "encoding": "plain",
+                "mode": "0644",
+                "owner": "root",
+                "group": "root"
+              },
+              "/etc/rsyslog.d/25-gitlab-runner.conf": {
+                "content": ":programname, isequal, \"gitlab-runner\" /var/log/gitlab-runner.log",
+                "encoding": "plain",
+                "mode": "0644",
+                "owner": "root",
+                "group": "root"
+              }
+            }
+          },
+          "register": {
+            "commands": {
+              "register-runner": {
+                "command": {
+                  "Fn::Sub": [
+                    "#!/bin/bash\n# Name : Register.sh\n# Purpos: register gitlab runner bastion to gitlba server\n# Author Bouaziz BELGUENDOUZ\n#\n#--------------------------------------------\nACCOUNT_ID=\"${__ACCOUNT_ID__}\"\nREGION=\"${__REGION__}\"\nGitLabServer=\"${__GITLAB_SERVER__}\"\nRunnerName=\"${__RUNNER_NAME__}\"\nGitLabRunnerTokenSecretName=\"${__GITLAB_RUNNER_TOKEN_SECRET_NAME__}\"\nLogOutputlimit=\"${__GITLAB_LOG_OUTPUT_LIMIT__}\"\nGitLabRunnerTags=\"${__GITLAB_RUNNER_TAGS__}\"\nAgentConfigSSMParam=\"${__SSM_CLOUDWATCH_AGENT_CONFIG__}\"\nCacheBucketName=\"${__CACHE_BUCKET__}\"\nGitlabRunnerVersion=\"${__GITLAB_RUNNER_VERSION__}\"\n\nrpm -Uvh https://s3.amazonaws.com/amazoncloudwatch-agent/amazon_linux/amd64/latest/amazon-cloudwatch-agent.rpm\n/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c ssm:${!AgentConfigSSMParam} -s\n\n#Install jq\nyum install -y jq\n# Get gitlab runner token from secret manager\nGitLabRunnerToken=$(aws secretsmanager get-secret-value --secret-id ${!GitLabRunnerTokenSecretName} --region ${!REGION}   --query SecretString   --version-stage AWSCURRENT --output text | jq -r .token|| error=true)\nif  [ $error ]; then\n    echo \"Error geting Secret\"\n    sleep 60 \nfi\n# Install CloudWatch Agent\n# Create gitlab runner directories\nmkdir -p /opt/gitlab-runner/{metadata,builds,cache} || error=true\nif [[ $error ]]\nthen\n    echo \"error creating gitlab runner directories\" \n    exit 1\nfi\n\ncurl -o /opt/gitlab-runner/fargate https://gitlab-runner-custom-fargate-downloads.s3.amazonaws.com/latest/fargate-linux-amd64\n\nchmod 755 /opt/gitlab-runner/fargate || error=true\nif [[ $error  ]]\nthen\n    echo \"error installing fargate plugin \" \n    exit 1\nfi\nsystemctl stop gitlab-runner.service\ngitlab-runner register --non-interactive --url \\\n    https://${!GitLabServer}   \\\n    --registration-token ${!GitLabRunnerToken} \\\n    --description ${!RunnerName} \\\n    --builds-dir \"/opt/gitlab-runner/builds\" \\\n    --cache-dir \"/opt/gitlab-runner/cache\" \\\n    --output-limit ${!LogOutputlimit} \\\n    --tag-list ${!GitLabRunnerTags} \\\n    --cache-type \"s3\" \\\n    --cache-s3-bucket-name ${!CacheBucketName} \\\n    --cache-s3-bucket-location \"${!REGION}\" \\\n    --cache-shared --locked=true \\\n    --executor custom \\\n    --custom-config-exec /opt/gitlab-runner/fargate \\\n    --custom-config-args --config --custom-config-args  /etc/gitlab-runner/fargate.toml --custom-config-args  custom --custom-config-args config \\\n    --custom-prepare-exec /opt/gitlab-runner/fargate \\\n    --custom-prepare-args --config --custom-prepare-args  /etc/gitlab-runner/fargate.toml --custom-prepare-args custom --custom-prepare-args prepare \\\n    --custom-run-exec /opt/gitlab-runner/fargate \\\n    --custom-run-args  --config --custom-run-args  /etc/gitlab-runner/fargate.toml --custom-run-args  custom --custom-run-args  run \\\n    --custom-cleanup-exec /opt/gitlab-runner/fargate \\\n    --custom-cleanup-args --config --custom-cleanup-args  /etc/gitlab-runner/fargate.toml  --custom-cleanup-args custom --custom-cleanup-args  cleanup \necho \"Gitlab runner installed successfully\"\n# Restart rsyslog and gitlab-runner\nsystemctl daemon-reload\necho \"Restarting rsyslog service\"\nsystemctl restart rsyslog.service \necho \"Restarting gitlab-runner service\"\nsystemctl start gitlab-runner.service\n# Get gitlab token from secret manager\nexit 0",
+                    {
+                      "__ACCOUNT_ID__": "748602279978",
+                      "__REGION__": "eu-west-1",
+                      "__GITLAB_SERVER__": "gitlab.agora-t.net",
+                      "__RUNNER_NAME__": "GitlabrunnerBastionStack-a-runner",
+                      "__GITLAB_RUNNER_TOKEN_SECRET_NAME__": "/Gitlab/Runner/LZ/Token",
+                      "__GITLAB_RUNNER_TAGS__": "lz-aws-testing",
+                      "__GITLAB_LOG_OUTPUT_LIMIT__": "4096",
+                      "__SSM_CLOUDWATCH_AGENT_CONFIG__": {
+                        "Ref": "CloudWatchAgentConfigF6F50B7E"
+                      },
+                      "__CACHE_BUCKET__": {
+                        "Ref": "gitlabrunnercachebucketD02416E3"
+                      },
+                      "__GITLAB_RUNNER_VERSION__": "14.2.0-1"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "GitlabrunnerBastionStackcluser": {
+      "Type": "AWS::ECS::Cluster",
+      "Properties": {
+        "CapacityProviders": [
+          "FARGATE",
+          "FARGATE_SPOT"
+        ],
+        "ClusterName": "GitlabrunnerBastionStack-cluser",
+        "ClusterSettings": [
+          {
+            "Name": "containerInsights",
+            "Value": "enabled"
+          }
+        ],
+        "DefaultCapacityProviderStrategy": [
+          {
+            "CapacityProvider": "FARGATE_SPOT",
+            "Weight": 100
+          },
+          {
+            "CapacityProvider": "FARGATE",
+            "Weight": 10
+          }
+        ]
+      },
+      "Metadata": {
+        "aws:cdk:path": "GitlabrunnerBastionStack/GitlabrunnerBastionStack-cluser"
+      }
+    },
+    "GitlabrunnerBastionStackamazonlinux": {
+      "Type": "AWS::ECS::TaskDefinition",
+      "Properties": {
+        "ContainerDefinitions": [
+          {
+            "Image": {
+              "Fn::Join": [
+                "",
+                [
+                  "748602279978.dkr.ecr.eu-west-1.",
+                  {
+                    "Ref": "AWS::URLSuffix"
+                  },
+                  "/aws-cdk/assets:46bab51373f2aa1c4cb9cb65a4a85fe332bf50c7585c99df578ac036dd108b83"
+                ]
+              ]
+            },
+            "LogConfiguration": {
+              "LogDriver": "awslogs",
+              "Options": {
+                "awslogs-group": "/Gitlab/Runner/",
+                "awslogs-region": "eu-west-1",
+                "awslogs-stream-prefix": "fargate"
+              }
+            },
+            "Name": "ci-coordinator",
+            "PortMappings": [
+              {
+                "ContainerPort": 22
+              }
+            ]
+          }
+        ],
+        "Cpu": "1024",
+        "ExecutionRoleArn": {
+          "Fn::GetAtt": [
+            "GitlabExecutionRoleFE69E778",
+            "Arn"
+          ]
+        },
+        "Family": "GitlabrunnerBastionStackamazonlinux",
+        "Memory": "2048",
+        "NetworkMode": "awsvpc",
+        "TaskRoleArn": {
+          "Fn::GetAtt": [
+            "GitlabTaskRoleF5F511B8",
+            "Arn"
+          ]
+        }
+      },
+      "Metadata": {
+        "aws:cdk:path": "GitlabrunnerBastionStack/GitlabrunnerBastionStackamazonlinux"
+      }
+    },
+    "CloudWatchAgentConfigF6F50B7E": {
+      "Type": "AWS::SSM::Parameter",
+      "Properties": {
+        "Type": "String",
+        "Value": "{\n    \"agent\": {\n      \"metrics_collection_interval\": 10,\n      \"logfile\": \"/opt/aws/amazon-cloudwatch-agent/logs/amazon-cloudwatch-agent.log\"\n    },\n    \"logs\": {\n      \"logs_collected\": {\n        \"files\": {\n          \"collect_list\": [\n            {\n              \"file_path\": \"/opt/aws/amazon-cloudwatch-agent/logs/amazon-cloudwatch-agent.log\",\n              \"log_group_name\": \"/Gitlab/Runner/\",\n              \"log_stream_name\": \"amazon-cloudwatch-agent.log\",\n              \"timezone\": \"UTC\"\n            },\n            {\n              \"file_path\": \"/var/log/cloud-init.log\",\n              \"log_group_name\": \"/Gitlab/Runner/\",\n              \"log_stream_name\": \"cloud-init.log\",\n              \"timezone\": \"Local\"\n            },\n            {\n                \"file_path\": \"/var/log/cfn-init.log\",\n                \"log_group_name\": \"/Gitlab/Runner/\",\n                \"log_stream_name\": \"cfn-init.log\",\n                \"timezone\": \"Local\"\n            },\n            {\n                \"file_path\": \"/var/log/gitlab-runner.log\",\n                \"log_group_name\": \"/Gitlab/Runner/\",\n                \"log_stream_name\": \"gitlab-runner.log\",\n                \"timezone\": \"Local\"\n            }\n          ]\n        }\n      },\n      \"log_stream_name\": \"my_log_stream_name\",\n      \"force_flush_interval\" : 15\n    }\n}",
+        "Description": "CLoudwatch agent config"
+      },
+      "Metadata": {
+        "aws:cdk:path": "GitlabrunnerBastionStack/CloudWatchAgentConfig/Resource"
+      }
+    },
+    "CDKMetadata": {
+      "Type": "AWS::CDK::Metadata",
+      "Properties": {
+        "Analytics": "v2:deflate64:H4sIAAAAAAAA/31R22rDMAz9lr677trCYG/rZYzCHkK6HxCekqpJ7CLZjGDy77OTbRkb7EnS0dHtaK3Xm42+WzzCuyzNW7OKxjHqePZgGlWiuMAG1cFZ8RyMV4fKFsDQoUdWOxH0iVqTrXPmiz+o3C7KVsd9MA2OZZ/eZArXkulneIoHRdDpWLoWx3bZzszZO6VtwBos2FXUpnFoNmlnNIHJ98/swi3T/gdOtmYU+YM/jXA6IXgnBtp0m467FJyn4LvbCwRrLkmaiurA4MnZDP+m5u1Ex5Q5tEGybMl9BWmOWJGlXJYpvISspuijS4LwqYMaR31zTpd4c0Lecb8HQSXS5R9xmjF/4+drhmFQRe8vzq62+kHfL65CtORgPXWoy8l+ABzHiof9AQAA"
+      },
+      "Metadata": {
+        "aws:cdk:path": "GitlabrunnerBastionStack/CDKMetadata/Default"
+      }
+    }
+  },
+  "Parameters": {
+    "SsmParameterValueawsserviceamiamazonlinuxlatestamzn2amihvmx8664gp2C96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Type": "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>",
+      "Default": "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
+    }
+  }
+}

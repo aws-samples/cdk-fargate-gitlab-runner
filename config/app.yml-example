@@ -1,0 +1,16 @@
+---
+# Gitlab fargate runner stack parameters
+app_name: gitlab-ci-fargate-runner
+bastion:
+  gitlab_runner_version: 14.2.0-1
+  VpcId: 
+  gitlab_server: gitlab.com # modify with gitlab server
+  gitlab_runner_token_secret_name: # Put here the name of the gitlab tokensecret name stored in secret manager
+  runner_tags: # put here liset of  tags of gitlab runner
+  runner_log_output_limit: "4096"
+  concurrent_jobs: # put here the desired concurent jobs
+  default_ssh_username: root
+  docker_image_name: # put here the defaul docker image to use
+  task_definition_cpu: "512" # put here the cpu size of the Fargate task definition
+  task_definition_memory: "1024" put here the memory size of the Fargate task definition
+...
