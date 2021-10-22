@@ -141,6 +141,7 @@ cython_debug/
 cdk.context.json
 package-lock.json
 yarn.lock
+cdk.out/*
 .cdk.staging
 cdk.out/asset*
 cdk.out/cdk.out
