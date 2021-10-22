@@ -180,7 +180,7 @@ class GitlabCiFargateRunnerStack(cdk.Stack):
 
             asg_1a = autoscaling.AutoScalingGroup(
                 self,
-                "GitlabrunnerAsg",
+                "GitlabrunnerAsg1a",
                 vpc=self.vpc,
                 instance_type=ec2.InstanceType.of(
                     ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.NANO
@@ -192,6 +192,28 @@ class GitlabCiFargateRunnerStack(cdk.Stack):
                 vpc_subnets=ec2.SubnetSelection(
                     subnet_type=SubnetType.PRIVATE,
                     availability_zones=[f"{self.region}a"],
+                ),
+                signals=autoscaling.Signals.wait_for_all(),
+                role=self.bastion_role,
+                key_name=props.get("ssh_key_name") or None,
+                block_devices=[root_volume],
+                allow_all_outbound=False,
+                security_group=self.sg_bastion 
+            )
+            asg_1b = autoscaling.AutoScalingGroup(
+                self,
+                "GitlabrunnerAsg1b",
+                vpc=self.vpc,
+                instance_type=ec2.InstanceType.of(
+                    ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.NANO
+                ),
+                machine_image=ec2.AmazonLinuxImage(
+                    generation=ec2.AmazonLinuxGeneration.AMAZON_LINUX_2,
+                    storage=ec2.AmazonLinuxStorage.GENERAL_PURPOSE,
+                ),
+                vpc_subnets=ec2.SubnetSelection(
+                    subnet_type=SubnetType.PRIVATE,
+                    availability_zones=[f"{self.region}b"],
                 ),
                 signals=autoscaling.Signals.wait_for_all(),
                 role=self.bastion_role,
@@ -248,7 +270,7 @@ class GitlabCiFargateRunnerStack(cdk.Stack):
             self.fargate_task_definition = ecs.CfnTaskDefinition(
                 self,
                 f"{self.stack_name}{props.get('docker_image_name')}",
-                family=f"{self.stack_name}{props.get('docker_image_name')}",
+                family=f"{props.get('docker_image_name')}",
                 cpu=props.get("task_definition_cpu"),
                 memory=props.get("task_definition_memory"),
                 network_mode="awsvpc",
@@ -256,7 +278,19 @@ class GitlabCiFargateRunnerStack(cdk.Stack):
                 execution_role_arn=self.fargate_execution_role.role_arn,
                 container_definitions=[ci_coordinator],
             )
-            self.addLauncheConfiguration(asg_1a, props, "a")
+            # SSM parameter to cloudwatch agent log
+            with open("./config/cloudwatch_agent.json", "r") as cloudwatch_agent_config:
+                cloud_watch_config_param = ssm.StringParameter(
+                    self,
+                    "CloudWatchAgentConfig",
+                    string_value=cloudwatch_agent_config.read(),
+                    description="CLoudwatch agent config",
+                )
+            cloudwatch_agent_config.close
+            cloud_watch_config_param.grant_read(self.bastion_role)
+
+            self.addLauncheConfiguration(asg_1a, props, "a", cloud_watch_config_param.parameter_name)
+            self.addLauncheConfiguration(asg_1b, props, "b", cloud_watch_config_param.parameter_name)
             self.output_props = props.copy()
             self.output_props["vpc"] = self.vpc
             self.output_props["fargate_task_definition"] = self.fargate_task_definition
@@ -268,18 +302,9 @@ class GitlabCiFargateRunnerStack(cdk.Stack):
     # ----------------------------------------------------
     # Methode to add launch template to autoscaling group
     # ----------------------------------------------------
-    def addLauncheConfiguration(self, asg: autoscaling, props, az):
+    def addLauncheConfiguration(self, asg: autoscaling, props, az, cloudwatch_agent_config_ssm_param_name):
         subnet_id = ""
-        # SSM parameter to cloudwatch agent log
-        with open("./config/cloudwatch_agent.json", "r") as cloudwatch_agent_config:
-            cloud_watch_config_param = ssm.StringParameter(
-                self,
-                "CloudWatchAgentConfig",
-                string_value=cloudwatch_agent_config.read(),
-                description="CLoudwatch agent config",
-            )
-        cloudwatch_agent_config.close
-        cloud_watch_config_param.grant_read(self.bastion_role)
+
         userdata_env_mappings = {
             "__ACCOUNT_ID__": self.account,
             "__REGION__": self.region,
@@ -290,7 +315,7 @@ class GitlabCiFargateRunnerStack(cdk.Stack):
             ),
             "__GITLAB_RUNNER_TAGS__": props.get("runner_tags"),
             "__GITLAB_LOG_OUTPUT_LIMIT__": props.get("runner_log_output_limit"),
-            "__SSM_CLOUDWATCH_AGENT_CONFIG__": cloud_watch_config_param.parameter_name,
+            "__SSM_CLOUDWATCH_AGENT_CONFIG__": cloudwatch_agent_config_ssm_param_name,
             "__CACHE_BUCKET__": self.cache_bucket.bucket_name,
             "__GITLAB_RUNNER_VERSION__": props.get("gitlab_runner_version"),
         }
