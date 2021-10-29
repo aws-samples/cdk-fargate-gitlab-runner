@@ -121,6 +121,12 @@ Add  .gitlab_ci.yml to your project
 After commiting and pushing the code update, the pipline starts  and uses the fargate runner to execute the jobs. The docker image used to execute the jobs is the one defined in Fargate task difinition. We can override the docker image, by creating a new task definition and set the variable FARGATE_TASK_DEFINITION in `.gitlab-ci.yml`.
 
 ![Results](/docs/img/gitlab-pipeline-screenshot.png)
+# Cleanup
+Run the command below to delete the resources that were created.
+   ``` 
+    # cd gitlab-ci-fargate-runner
+    # pipenv run cdk destroy  --all  
+  ``` 
 # LICENSE
 This project is licensed under the MIT-0 License. See the LICENSE file.
 
