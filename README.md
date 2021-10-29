@@ -67,7 +67,6 @@ Check your Python version:
     ...
     ```
     ``` 
-    # cd gitlab-ci-fargate-runner
     # pipenv install
     # start docker service , it is used to build image 
     # pipenv run cdk synth  --all \

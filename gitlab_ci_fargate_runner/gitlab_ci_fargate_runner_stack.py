@@ -339,7 +339,7 @@ class GitlabCiFargateRunnerStack(cdk.Stack):
                 "__REGION__": self.region,
                 "__ECS_CLUSTER__": f"{self.stack_name}-cluser",
                 "__SUBNET_ID__": subnet_id,
-                "__CONCURRENT_JOBS__": props.get("concurrent_jobs"),
+                "__CONCURRENT_JOBS__": str(props.get("concurrent_jobs")),
                 "__SECURITY_GROUP_ID__": self.sg_bastion.security_group_id,
                 "__TASK_DEFINITION__": self.fargate_task_definition.ref,
                 "__SSH_USERNAME__": props.get("default_ssh_username"),
