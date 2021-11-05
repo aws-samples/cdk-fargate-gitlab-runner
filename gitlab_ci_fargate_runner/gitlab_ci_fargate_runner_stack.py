@@ -109,51 +109,6 @@ class GitlabCiFargateRunnerStack(cdk.Stack):
                 ],
                 inline_policies=bastion_role_policies,
             )
-
-            # fargate Execution role policies
-            self.fargate_task_role_policies = {
-                "AllowListOrgUnitParent": iam.PolicyDocument(
-                    statements=[
-                        iam.PolicyStatement(
-                            effect=iam.Effect.ALLOW,
-                            actions=[
-                                "logs:CreateLogGroup",
-                                "logs:CreateLogStream",
-                                "logs:DescribeLogStreams",
-                                "logs:PutLogEvents",
-                            ],
-                            resources=[
-                                f"arn:aws:logs:{self.region}:{self.account}:log-group:/Gitlab/*"
-                            ],
-                        )
-                    ]
-                )
-            }
-            self.fargate_execution_role = iam.Role(
-                self,
-                "GitlabExecutionRole",
-                assumed_by=iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
-                managed_policies=[
-                    iam.ManagedPolicy.from_aws_managed_policy_name(
-                        "service-role/AmazonECSTaskExecutionRolePolicy"
-                    )
-                ],
-            )
-
-            self.fargate_task_role = iam.Role(
-                self,
-                "GitlabTaskRole",
-                assumed_by=iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
-                managed_policies=[
-                    iam.ManagedPolicy.from_aws_managed_policy_name(
-                        "AmazonEC2ContainerRegistryReadOnly"
-                    )
-                ],
-                inline_policies=self.fargate_task_role_policies,
-            )
-
-            # userdata = ec2.UserData.for_linux(shebang="#!/bin/bash -xe")
-            # userdata.add_commands()
             root_volume = autoscaling.BlockDevice(
                 device_name="/dev/sda1",
                 volume=autoscaling.BlockDeviceVolume.ebs(
@@ -243,12 +198,6 @@ class GitlabCiFargateRunnerStack(cdk.Stack):
                 ],
                 cluster_settings=[enbale_containerInsights],
             )
-            # # Add Fargate task definition
-            docker_image = DockerImageAsset(
-                self,
-                props.get("docker_image_name"),
-                directory=f'./docker_images/{props.get("docker_image_name")}',
-            )
 
             awslogs_driver = ecs.CfnTaskDefinition.LogConfigurationProperty(
                 log_driver="awslogs",
@@ -257,26 +206,6 @@ class GitlabCiFargateRunnerStack(cdk.Stack):
                     "awslogs-region": self.region,
                     "awslogs-stream-prefix": "fargate",
                 },
-            )
-            port_mappings = [
-                ecs.CfnTaskDefinition.PortMappingProperty(container_port=22)
-            ]
-            ci_coordinator = ecs.CfnTaskDefinition.ContainerDefinitionProperty(
-                name="ci-coordinator",
-                image=docker_image.image_uri,
-                port_mappings=port_mappings,
-                log_configuration=awslogs_driver,
-            )
-            self.fargate_task_definition = ecs.CfnTaskDefinition(
-                self,
-                f"{self.stack_name}{props.get('docker_image_name')}",
-                family=f"{props.get('docker_image_name')}",
-                cpu=props.get("task_definition_cpu"),
-                memory=props.get("task_definition_memory"),
-                network_mode="awsvpc",
-                task_role_arn=self.fargate_task_role.role_arn,
-                execution_role_arn=self.fargate_execution_role.role_arn,
-                container_definitions=[ci_coordinator],
             )
             # SSM parameter to cloudwatch agent log
             with open("./config/cloudwatch_agent.json", "r") as cloudwatch_agent_config:
@@ -293,7 +222,7 @@ class GitlabCiFargateRunnerStack(cdk.Stack):
             self.addLauncheConfiguration(asg_1b, props, "b", cloud_watch_config_param.parameter_name)
             self.output_props = props.copy()
             self.output_props["vpc"] = self.vpc
-            self.output_props["fargate_task_definition"] = self.fargate_task_definition
+            # self.output_props["fargate_task_definition"] = self.fargate_task_definition
 
         except:
             print("Unexpected error:", sys.exc_info()[0])
@@ -341,7 +270,7 @@ class GitlabCiFargateRunnerStack(cdk.Stack):
                 "__SUBNET_ID__": subnet_id,
                 "__CONCURRENT_JOBS__": str(props.get("concurrent_jobs")),
                 "__SECURITY_GROUP_ID__": self.sg_bastion.security_group_id,
-                "__TASK_DEFINITION__": self.fargate_task_definition.ref,
+                "__TASK_DEFINITION__": "to_be_exported",
                 "__SSH_USERNAME__": props.get("default_ssh_username"),
             }
             with open("./config/fargate.toml", "r") as gitlab_fargate_h:

@@ -38,6 +38,7 @@ try:
         props = yaml.safe_load(stream)
 except IOError:
     print("Error: Stack config file not found.")
+    raise
 except:
     print("Unexpected error:", sys.exc_info()[0])
     raise
