@@ -66,6 +66,7 @@ Check your Python version:
       task_definition_memory: "1024"  see (https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html)
     ...
     ```
+    The Gitlab runner token should be stored in [AWS Secret manager](https://aws.amazon.com/secrets-manager/?nc1=h_ls)  as a key/velue, with key=token and value=Gitlab runner token that we find in gitlab settings/cicd/runners.
     ``` 
     # pipenv install
     # start docker service , it is used to build image 
@@ -73,13 +74,13 @@ Check your Python version:
     # pipenv run cdk deploy --all
     
     ``` 
-    This will deploy two stacks, `GitlabrunnerBastionStack` and `amazonlinuxTaskDefinitionStack`. 
+    This will deploy two stacks, `GitlabrunnerBastionStack` and `{docker_image_name}TaskDefinitionStack`.  where docker_image_name is the value set config/app.yml
 
     You can deploy more task definitions stacks by running:
     ``` 
-    # pipenv run cdk deploy -c DockerImageName=DOCKER_IMAGE_NAME -c Memory=1024 -c CPU=512  {DOCKER_IMAGE_NAME}TaskDefinitionStack
+    # pipenv run cdk deploy -c DockerImageName=docker_image_name -c Memory=1024 -c CPU=512  {docker_image_name}TaskDefinitionStack
     ``` 
-    Where DOCKER_IMAGE_NAME to the name of the docker image found in the directory `docker_images`
+    Where docker_image_name to the name of the docker image found in the directory `docker_images`
 ### Testing
 Add  .gitlab_ci.yml to your project 
 ```yaml
