@@ -66,7 +66,7 @@ Check your Python version:
       task_definition_memory: "1024"  see (https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html)
     ...
     ```
-    The Gitlab runner token should be stored in [AWS Secret manager](https://aws.amazon.com/secrets-manager/?nc1=h_ls)  as a key/velue, with key=token and value=Gitlab runner token that we find in gitlab settings/cicd/runners.
+    The Gitlab runner token should be stored in [AWS Secret manager](https://aws.amazon.com/secrets-manager/?nc1=h_ls)  as a key/velue, with key=token and value can be retrieved from Gitlab setting from settings/cicd/runners.
     ``` 
     # pipenv install
     # start docker service , it is used to build image 
