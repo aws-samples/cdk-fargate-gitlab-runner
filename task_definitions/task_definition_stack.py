@@ -15,51 +15,26 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
-from typing import Protocol
-from aws_cdk import core as cdk
-from aws_cdk.aws_ec2 import InitCommand, SubnetType
-import os
+import aws_cdk as cdk
+from constructs import Construct
 import sys
 from aws_cdk import (
-    core,
-    aws_ec2 as ec2,
     aws_iam as iam,
-    aws_ssm as ssm,
     aws_ecs as ecs,
-    aws_s3 as s3,
-    aws_autoscaling as autoscaling,
-    aws_secretsmanager as secretsmanager,
-    core,
+    aws_logs as logs
 )
 from aws_cdk.aws_ecr_assets import DockerImageAsset
-from aws_cdk.aws_logs import LogGroup
+import json
+from jinja2 import Template
 
 
 class TaskDefinitionStack(cdk.Stack):
     def __init__(
-        self, scope: cdk.Construct, construct_id: str, env, props, **kwargs
+        self, scope: Construct, construct_id: str, env, props, **kwargs
     ) -> None:
         super().__init__(scope, construct_id, env=env, **kwargs)
         try:
-            # fargate Execution role policies
-            self.fargate_task_role_policies = {
-                "AllowListOrgUnitParent": iam.PolicyDocument(
-                    statements=[
-                        iam.PolicyStatement(
-                            effect=iam.Effect.ALLOW,
-                            actions=[
-                                "logs:CreateLogGroup",
-                                "logs:CreateLogStream",
-                                "logs:DescribeLogStreams",
-                                "logs:PutLogEvents",
-                            ],
-                            resources=[
-                                f"arn:aws:logs:{self.region}:{self.account}:log-group:/Gitlab/*"
-                            ],
-                        )
-                    ]
-                )
-            }
+
             self.fargate_execution_role = iam.Role(
                 self,
                 "GitlabExecutionRole",
@@ -70,29 +45,57 @@ class TaskDefinitionStack(cdk.Stack):
                     )
                 ],
             )
-
+        
             self.fargate_task_role = iam.Role(
                 self,
                 "GitlabTaskRole",
                 assumed_by=iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
                 managed_policies=[
-                    iam.ManagedPolicy.from_aws_managed_policy_name(
-                        "AmazonEC2ContainerRegistryReadOnly"
-                    )
-                ],
-                inline_policies=self.fargate_task_role_policies,
+                    iam.ManagedPolicy.from_aws_managed_policy_name(policy) for policy in props.get("managed_policies", [])
+                ]
             )
+    
+            try:
+                task_policies_template = props.get("iam_policy_template", "")
+                with open(task_policies_template) as f:
+                    j2_template = Template(f.read())
+                rendered_template = j2_template.render(
+                    region=self.region, account=self.account
+                )
+                task_policies = json.loads(rendered_template)
+                self.fargate_task_role_policies = iam.Policy(
+                    self,
+                    "taskPolicy",
+                    document=iam.PolicyDocument.from_json(task_policies),
+                )
+                self.fargate_task_role.attach_inline_policy(
+                    self.fargate_task_role_policies
+                )
+            except IOError:
+                print("No task policies template provided.")
             # Add Fargate task definition
             default_docker_image = DockerImageAsset(
                 self,
                 props.get("docker_image_name"),
                 directory=f'./docker_images/{props.get("docker_image_name")}',
+                build_args={
+                    "GITLAB_RUNNER_VERSION": props.get("gitlab_runner_version") 
+                }
             )
+
+            # Create LogGroup
+            self.log_group = logs.LogGroup(self,
+                                           id="LogGroup",
+                                           log_group_name=props.get(
+                                               "log_group_name", f'/Gitlab/TaskDefinitions/{props.get("docker_image_name")}/'),
+                                           removal_policy=cdk.RemovalPolicy.DESTROY,
+                                           retention=logs.RetentionDays.ONE_DAY,
+                                           )
 
             awslogs_driver = ecs.CfnTaskDefinition.LogConfigurationProperty(
                 log_driver="awslogs",
                 options={
-                    "awslogs-group": "/Gitlab/Runner/",
+                    "awslogs-group": self.log_group.log_group_name,
                     "awslogs-region": self.region,
                     "awslogs-stream-prefix": "fargate",
                 },
@@ -110,13 +113,14 @@ class TaskDefinitionStack(cdk.Stack):
                 self,
                 f'{props.get("docker_image_name")}TaskDefinition',
                 family=f'{props.get("docker_image_name")}',
-                cpu=props.get("task_definition_cpu"),
-                memory=props.get("task_definition_memory"),
+                cpu=str(props.get("task_definition_cpu", 256)),
+                memory=str(props.get("task_definition_memory", 512)),
                 network_mode="awsvpc",
                 task_role_arn=self.fargate_task_role.role_arn,
                 execution_role_arn=self.fargate_execution_role.role_arn,
                 container_definitions=[ci_coordinator],
             )
+
             self.output_props = props.copy()
             self.output_props["fargate_task_definition"] = self.fargate_task_definition
 

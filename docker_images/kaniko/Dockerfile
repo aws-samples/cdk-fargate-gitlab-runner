@@ -15,7 +15,27 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
+
+FROM gcr.io/kaniko-project/executor:v1.7.0 AS kaniko
 FROM amazonlinux:2.0.20210813.1
+
+# ----------------------------------------------------------------
+# Copy the kaniko executable and cloud container registry helpers.
+# Then, set up the tool.
+# ----------------------------------------------------------------
+COPY --from=kaniko /kaniko/executor /kaniko/
+COPY --from=kaniko /kaniko/docker-credential-gcr /kaniko/
+COPY --from=kaniko /kaniko/docker-credential-ecr-login /kaniko/
+COPY --from=kaniko /kaniko/docker-credential-acr /kaniko/
+
+ENV DOCKER_CONFIG /kaniko/.docker/
+ENV DOCKER_CREDENTIAL_GCR_CONFIG /kaniko/.config/gcloud/docker_credential_gcr_config.json
+ENV PATH ${PATH}:/kaniko
+
+RUN mkdir -p /kaniko/.docker \
+    && mkdir -p /kaniko/ssl \
+    && docker-credential-gcr config --token-source=env
+    
 # ---------------------------------------------------------------------
 # Install https://github.com/krallin/tini - a very small 'init' process
 # that helps processing signalls sent to the container properly.
@@ -25,7 +45,7 @@ ARG TINI_VERSION=v0.19.0
 RUN yum update -y && \
     yum install -y curl jq && \
     curl -Lo /usr/local/bin/tini https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-amd64 && \
-    chmod +x /usr/local/bin/tini && \
+    chmod +x /usr/local/bin/tini &&\
     yum -y clean all && \
     rm -rf /var/cache
 

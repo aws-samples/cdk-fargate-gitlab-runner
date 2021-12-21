@@ -14,11 +14,13 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
+
 FROM debian:buster
+
 ARG TINI_VERSION=v0.19.0
 
 RUN apt-get update && \
-    apt-get install -y curl && \
+    apt-get install -y curl jq && \
     curl -Lo /usr/local/bin/tini https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-amd64 && \
     chmod +x /usr/local/bin/tini
 
@@ -38,9 +40,9 @@ EXPOSE 22
 # ----------------------------------------
 # Install GitLab CI required dependencies.
 # ----------------------------------------
-ARG GITLAB_RUNNER_VERSION=v14.2
+ARG GITLAB_RUNNER_VERSION
 
-RUN curl -Lo /usr/local/bin/gitlab-runner https://gitlab-runner-downloads.s3.amazonaws.com/${GITLAB_RUNNER_VERSION}/binaries/gitlab-runner-linux-amd64 && \
+RUN curl -Lo /usr/local/bin/gitlab-runner https://gitlab-runner-downloads.s3.amazonaws.com/v${GITLAB_RUNNER_VERSION}/binaries/gitlab-runner-linux-amd64 && \
     chmod +x /usr/local/bin/gitlab-runner
     # Test if the downloaded file was indeed a binary and not, for example,
     # an HTML page representing S3's internal server error message or something

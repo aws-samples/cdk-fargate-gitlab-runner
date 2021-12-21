@@ -17,58 +17,74 @@
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 import os
-import yaml
+from yaml import safe_load
 import sys
-import random
-from aws_cdk import core as cdk
+import aws_cdk as cdk
 
-# For consistency with TypeScript code, `cdk` is the preferred import name for
-# the CDK's core module.  The following line also imports it as `core` for use
-# with examples from the CDK Developer's Guide, which are in the process of
-# being updated to use `cdk`.  You may delete this import if you don't need it.
-from aws_cdk import core
 from gitlab_ci_fargate_runner.gitlab_ci_fargate_runner_stack import (
     GitlabCiFargateRunnerStack,
 )
 
 from task_definitions.task_definition_stack import TaskDefinitionStack
 
+# Check for required variable
+
+if not os.getenv('CDK_DEFAULT_ACCOUNT'):
+    raise ValueError("Missing requiered environment variables CDK_DEFAULT_ACCOUNT")
+if not os.getenv('CDK_DEFAULT_REGION'):
+    raise ValueError("Missing required environment variables CDK_DEFAULT_REGION")
+
+# Load Config file
+props = {}
 try:
     with open("./config/app.yml", "r") as stream:
-        props = yaml.safe_load(stream)
+        props = safe_load(stream)
+    stream.close()
 except IOError:
-    print("Error: Stack config file not found.")
-    raise
+    print("Error: Stack config file not found. Using defaults")
 except:
-    print("Unexpected error:", sys.exc_info()[0])
-    raise
-hex_random = hex(random.getrandbits(16))
-app = core.App()
-env = cdk.Environment(
-    account=os.environ["CDK_DEFAULT_ACCOUNT"], region=os.environ["CDK_DEFAULT_REGION"]
-)
-
-
-if app.node.try_get_context("VpcId"):
-    props["bastion"]["VpcId"] = app.node.try_get_context("VpcId")
+    raise Exception(f'Unexpected error:{sys.exc_info()[0]}')
 
 if not props["bastion"]["VpcId"]:
     print("VPC_ID is mondatory cdk deploy -c vpcId=<YOUR_VPC_ID>")
     raise ValueError("VPC_ID is mondatory cdk deploy -c vpcId=<YOUR_VPC_ID>")
 
+app = cdk.App()
+env = cdk.Environment(
+    account=os.environ["CDK_DEFAULT_ACCOUNT"], region=os.environ["CDK_DEFAULT_REGION"]
+)
+
+# Add Tags for stack
+for k,v in props.get("tags",{}).items():
+    cdk.Tags.of(app).add(key=k,value=v)
+
+
+if app.node.try_get_context("BastionStackName"):
+    props["bastion"]["stack_name"] = app.node.try_get_context("BastionStackName")
+else:
+    props["bastion"]["stack_name"] = f'{props["app_name"]}BastionStack'
+
 GitlabCiFargateRunnerStack(
-    app, f"GitlabrunnerBastionStack", env=env, props=props.get("bastion")
+    app, props["bastion"]["stack_name"], env=env, props=props.get("bastion")
 )
 
 if app.node.try_get_context("DockerImageName"):
-    props["bastion"]["docker_image_name"] = app.node.try_get_context("DockerImageName")
+    props["task_definition"]["docker_image_name"] = app.node.try_get_context("DockerImageName")
 if app.node.try_get_context("Memory"):
-    props["bastion"]["task_definition_memory"] = app.node.try_get_context("Memory")
+    props["task_definition"]["memory"] = app.node.try_get_context("Memory")
 if app.node.try_get_context("CPU"):
-    props["bastion"]["task_definition_cpu"] = app.node.try_get_context("CPU")
+    props["task_definition"]["cpu"] = app.node.try_get_context("CPU")
+if app.node.try_get_context("TaskManagedPolicies"):
+    props["task_definition"]["managed_policies"] = app.node.try_get_context("TaskManagedPolicies").split(",")
+if app.node.try_get_context("TaskInlinePolicy"):
+    props["task_definition"]["iam_policy_template"] = app.node.try_get_context("TaskInlinePolicy")
+if app.node.try_get_context("TaskDefinitionStackName"):
+    props["task_definition"]["stack_name"] = app.node.try_get_context("TaskDefinitionStackName")
+else:
+    props["task_definition"]["stack_name"] = f"{props['task_definition']['docker_image_name']}TaskDefinitionStack"
 
 TaskDefinitionStack(
-    app, f"{props['bastion']['docker_image_name']}TaskDefinitionStack", env=env, props=props.get("bastion")
+    app, props["task_definition"]["stack_name"], env=env, props=props.get("task_definition")
 )
 
 app.synth()

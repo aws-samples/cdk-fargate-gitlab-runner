@@ -1,5 +1,3 @@
-FROM node:16.9
-
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
 #
@@ -16,6 +14,9 @@ FROM node:16.9
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
+
+FROM node:16.9
+
 ARG TINI_VERSION=v0.19.0
 
 RUN curl -Lo /usr/local/bin/tini https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-amd64 \
@@ -26,7 +27,7 @@ RUN curl -Lo /usr/local/bin/tini https://github.com/krallin/tini/releases/downlo
 # https://docs.docker.com/engine/examples/running_ssh_service for reference.
 # --------------------------------------------------------------------------
 RUN apt-get update \
-    && apt-get install -y openssh-server \
+    && apt-get install -y openssh-server jq \
     && mkdir -p /var/run/sshd
 
 EXPOSE 22
@@ -34,9 +35,9 @@ EXPOSE 22
 # ----------------------------------------
 # Install GitLab CI required dependencies.
 # ----------------------------------------
-ARG GITLAB_RUNNER_VERSION=v14.2.0
+ARG GITLAB_RUNNER_VERSION
 
-RUN curl -Lo /usr/local/bin/gitlab-runner https://gitlab-runner-downloads.s3.amazonaws.com/${GITLAB_RUNNER_VERSION}/binaries/gitlab-runner-linux-amd64 \
+RUN curl -Lo /usr/local/bin/gitlab-runner https://gitlab-runner-downloads.s3.amazonaws.com/v${GITLAB_RUNNER_VERSION}/binaries/gitlab-runner-linux-amd64 \
     && chmod +x /usr/local/bin/gitlab-runner
 
 RUN curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash \

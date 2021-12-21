@@ -42,9 +42,9 @@ EXPOSE 22
 # ----------------------------------------
 # Install GitLab CI required dependencies.
 # ----------------------------------------
-ARG GITLAB_RUNNER_VERSION=v14.2
+ARG GITLAB_RUNNER_VERSION
 
-RUN curl -Lo /usr/local/bin/gitlab-runner https://gitlab-runner-downloads.s3.amazonaws.com/${GITLAB_RUNNER_VERSION}/binaries/gitlab-runner-linux-amd64 && \
+RUN curl -Lo /usr/local/bin/gitlab-runner https://gitlab-runner-downloads.s3.amazonaws.com/v${GITLAB_RUNNER_VERSION}/binaries/gitlab-runner-linux-amd64 && \
     chmod +x /usr/local/bin/gitlab-runner
     # Test if the downloaded file was indeed a binary and not, for example,
     # an HTML page representing S3's internal server error message or something
