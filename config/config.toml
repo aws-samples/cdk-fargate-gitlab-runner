@@ -1,2 +1,0 @@
-concurrent = ${__CONCURRENT_JOBS__}
-check_interval = 0   

@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Mac
+.DS_Store
+
 # C extensions
 *.so
 
@@ -143,7 +146,3 @@ package-lock.json
 yarn.lock
 cdk.out/*
 .cdk.staging
-cdk.out/asset*
-cdk.out/cdk.out
-cdk.out/tree.json
-cdk.out/manifest.json

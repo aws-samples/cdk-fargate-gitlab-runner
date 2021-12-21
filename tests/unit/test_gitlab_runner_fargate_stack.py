@@ -16,13 +16,18 @@
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 import json
-import pytest
 import sys
 import yaml
 import os
-from aws_cdk import core as cdk
+import aws_cdk as cdk
+from aws_cdk import Stack
+from aws_cdk import assertions
+
 from gitlab_ci_fargate_runner.gitlab_ci_fargate_runner_stack import (
     GitlabCiFargateRunnerStack,
+)
+from task_definitions.task_definition_stack import (
+    TaskDefinitionStack,
 )
 
 
@@ -39,37 +44,50 @@ except:
     raise
 
 
-def get_template():
+def get_bastion_stack():
     app = cdk.App()
-    GitlabCiFargateRunnerStack(
+    stack = GitlabCiFargateRunnerStack(
         app, "GitlabrunnerBastionStack", env=env, props=props.get("bastion")
     )
-    return json.dumps(app.synth().get_stack("GitlabrunnerBastionStack").template)
+    return json.dumps(assertions.Template.from_stack(stack).to_json())
 
+def get_task_definition_stack():
+    app = cdk.App()
+    stack = TaskDefinitionStack(
+        app, f"{props['task_definition']['docker_image_name']}TaskDefinitionStack", env=env, props=props.get("task_definition")
+    )
+    return json.dumps(assertions.Template.from_stack(stack).to_json())
+
+def get_task_definition_stack():
+    app = cdk.App()
+    stack = TaskDefinitionStack(
+        app, f"{props['task_definition']['docker_image_name']}TaskDefinitionStack", env=env, props=props.get("task_definition")
+    )
+    return json.dumps(assertions.Template.from_stack(stack).to_json())
 
 def test_iam_role_created():
-    assert "AWS::IAM::Role" in get_template()
+    assert "AWS::IAM::Role" in get_bastion_stack()
 
 
 def test_s3_cache_bucket_created():
-    assert "AWS::S3::Bucket" in get_template()
+    assert "AWS::S3::Bucket" in get_bastion_stack()
 
 
 def test_bucket_policy_created():
-    assert "AWS::S3::BucketPolicy" in get_template()
+    assert "AWS::S3::BucketPolicy" in get_bastion_stack()
 
 
 def test_SecurityGroup_created():
-    assert "AWS::EC2::SecurityGroup" in get_template()
+    assert "AWS::EC2::SecurityGroup" in get_bastion_stack()
 
 
-def test_LaunchConfiguration_created():
-    assert "AWS::AutoScaling::LaunchConfiguration" in get_template()
-
-
-def test_ecs_cluster_created():
-    assert "AWS::ECS::Cluster" in get_template()
+def test_ecs_service_created():
+    assert "AWS::ECS::Service" in get_bastion_stack()
 
 
 def test_ecs_cluster_created():
-    assert "AWS::ECS::TaskDefinition" in get_template()
+    assert "AWS::ECS::Cluster" in get_bastion_stack()
+
+
+def test_ecs_cluster_created():
+    assert "AWS::ECS::TaskDefinition" in get_task_definition_stack()
