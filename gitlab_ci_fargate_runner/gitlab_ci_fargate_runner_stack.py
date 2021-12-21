@@ -15,33 +15,34 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
-from typing import Protocol
-from aws_cdk import core as cdk
-from aws_cdk.aws_ec2 import InitCommand, SubnetType
-import os
+import aws_cdk as cdk
+from constructs import Construct
 import sys
 from aws_cdk import (
-    core,
     aws_ec2 as ec2,
     aws_iam as iam,
-    aws_ssm as ssm,
     aws_ecs as ecs,
     aws_s3 as s3,
     aws_autoscaling as autoscaling,
-    aws_secretsmanager as secretsmanager,
-    core,
+    aws_logs as logs,
+    aws_secretsmanager as secretsmanager
+
 )
 from aws_cdk.aws_ecr_assets import DockerImageAsset
-from aws_cdk.aws_logs import LogGroup
 
 
 class GitlabCiFargateRunnerStack(cdk.Stack):
     def __init__(
-        self, scope: cdk.Construct, construct_id: str, env, props, **kwargs
+        self, scope: Construct, construct_id: str, env, props, **kwargs
     ) -> None:
         super().__init__(scope, construct_id, env=env, **kwargs)
         # Lookup for VPC
         self.vpc = ec2.Vpc.from_lookup(self, "VPC", vpc_id=props.get("VpcId"))
+        self.gitlab_token_secret = secretsmanager.Secret.from_secret_name_v2(
+            self,
+            "gitlabRegistrationToken",
+            props.get("gitlab_runner_token_secret_name"),
+        )
 
         try:
             cachebucket = s3.Bucket(
@@ -49,134 +50,99 @@ class GitlabCiFargateRunnerStack(cdk.Stack):
                 "gitlabrunnercachebucket",
                 block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
                 encryption=s3.BucketEncryption.KMS_MANAGED,
-                removal_policy=core.RemovalPolicy.DESTROY,
+                removal_policy=cdk.RemovalPolicy.DESTROY,
                 enforce_ssl=True,
             )
             self.cache_bucket = cachebucket
 
-            bastion_role_policies = {
-                "AllowSSMRead": iam.PolicyDocument(
-                    statements=[
-                        iam.PolicyStatement(
-                            effect=iam.Effect.ALLOW,
-                            actions=["ssm:GetParameter"],
-                            resources=[
-                                f"arn:aws:ssm:{self.region}:{self.account}:parameter/Gitlab/*"
-                            ],
-                        )
-                    ]
-                ),
-                "AllowListOrgUnitParent": iam.PolicyDocument(
+            # IAM Roles
+
+            self.fargate_execution_role_policies = {
+                "FargateExec": iam.PolicyDocument(
                     statements=[
                         iam.PolicyStatement(
                             effect=iam.Effect.ALLOW,
                             actions=[
-                                "logs:CreateLogGroup",
-                                "logs:CreateLogStream",
-                                "logs:DescribeLogStreams",
-                                "logs:PutLogEvents",
+                                "ssmmessages:CreateControlChannel",
+                                "ssmmessages:CreateDataChannel",
+                                "ssmmessages:OpenControlChannel",
+                                "ssmmessages:OpenDataChannel"
                             ],
-                            resources=[
-                                f"arn:aws:logs:{self.region}:{self.account}:log-group:/Gitlab/*"
-                            ],
+                             resources=["*"]
                         )
                     ]
-                ),
-                "AllowSecreManagerRetrieve": iam.PolicyDocument(
+                )
+            }
+            self.fargate_execution_role = iam.Role(
+                self,
+                "GitlabExecutionRole",
+                assumed_by=iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
+                managed_policies=[
+                    iam.ManagedPolicy.from_aws_managed_policy_name(
+                        "service-role/AmazonECSTaskExecutionRolePolicy"
+                    )
+                ],
+                inline_policies=self.fargate_execution_role_policies
+            )
+
+            self.fargate_task_role_policies = {
+                "FargateTask": iam.PolicyDocument(
                     statements=[
                         iam.PolicyStatement(
                             effect=iam.Effect.ALLOW,
-                            actions=["secretsmanager:GetSecretValue"],
-                            resources=[
-                                f"arn:aws:secretsmanager:{self.region}:{self.account}:secret:{props.get('gitlab_runner_token_secret_name')}*"
+                            actions=[
+                                "s3:PutObject",
+                                "s3:GetObjectVersion",
+                                "s3:GetObject",
+                                "s3:DeleteObject",
                             ],
+                            resources=[f"{self.cache_bucket.bucket_arn}/*"],
                         )
                     ]
-                ),
+                )
             }
-            # Ceate IAM roles
-            self.bastion_role = iam.Role(
+
+            self.gitlab_token_secret.grant_read(self.fargate_execution_role)
+
+            # Create IAM roles
+
+            self.fargate_task_role = iam.Role(
                 self,
-                "GitlabBastionRole",
-                assumed_by=iam.ServicePrincipal("ec2.amazonaws.com"),
+                "GitlabRunnerTaskRole",
+                assumed_by=iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
                 managed_policies=[
                     iam.ManagedPolicy.from_aws_managed_policy_name(
-                        "service-role/AmazonEC2RoleforSSM"
-                    ),
-                    iam.ManagedPolicy.from_aws_managed_policy_name(
                         "AmazonECS_FullAccess"
-                    ),
+                    )
                 ],
-                inline_policies=bastion_role_policies,
-            )
-            root_volume = autoscaling.BlockDevice(
-                device_name="/dev/sda1",
-                volume=autoscaling.BlockDeviceVolume.ebs(
-                    volume_size=10, encrypted=True, delete_on_termination=True
-                ),
+                inline_policies=self.fargate_task_role_policies,
             )
 
-
-
-            self.sg_bastion = ec2.SecurityGroup(
-                self, id="bastion_sg", vpc=self.vpc, allow_all_outbound=False
+            # Create LogGroup
+            self.log_group = logs.LogGroup(self,
+                                           id="LogGroup",
+                                           log_group_name=props.get(
+                                               "log_group_name", "/Gitlab/Runners/"),
+                                           removal_policy=cdk.RemovalPolicy.DESTROY,
+                                           retention=logs.RetentionDays.ONE_DAY,
+                                           )
+            # Create SG
+            self.sg_runner = ec2.SecurityGroup(
+                self, id="GitlabRunner", vpc=self.vpc, allow_all_outbound=False
             )
-            self.sg_bastion.add_ingress_rule(
-                peer=self.sg_bastion, connection=ec2.Port.tcp(22)
+            self.sg_runner.add_ingress_rule(
+                peer=self.sg_runner, connection=ec2.Port.tcp(22)
             )
-            self.sg_bastion.add_egress_rule(
-                peer=self.sg_bastion, connection=ec2.Port.tcp(22)
+            self.sg_runner.add_egress_rule(
+                peer=self.sg_runner, connection=ec2.Port.tcp(22)
             )
-            self.sg_bastion.add_egress_rule(
+            self.sg_runner.add_egress_rule(
                 peer=ec2.Peer.any_ipv4(), connection=ec2.Port.tcp(443)
             )
-                    
-            # asg_1a.add_security_group(self.sg_bastion)
+            self.sg_runner.add_egress_rule(
+                peer=ec2.Peer.any_ipv4(), connection=ec2.Port.tcp(80)
+            )
 
-            asg_1a = autoscaling.AutoScalingGroup(
-                self,
-                "GitlabrunnerAsg1a",
-                vpc=self.vpc,
-                instance_type=ec2.InstanceType.of(
-                    ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.NANO
-                ),
-                machine_image=ec2.AmazonLinuxImage(
-                    generation=ec2.AmazonLinuxGeneration.AMAZON_LINUX_2,
-                    storage=ec2.AmazonLinuxStorage.GENERAL_PURPOSE,
-                ),
-                vpc_subnets=ec2.SubnetSelection(
-                    subnet_type=SubnetType.PRIVATE,
-                    availability_zones=[f"{self.region}a"],
-                ),
-                signals=autoscaling.Signals.wait_for_all(),
-                role=self.bastion_role,
-                key_name=props.get("ssh_key_name") or None,
-                block_devices=[root_volume],
-                allow_all_outbound=False,
-                security_group=self.sg_bastion 
-            )
-            asg_1b = autoscaling.AutoScalingGroup(
-                self,
-                "GitlabrunnerAsg1b",
-                vpc=self.vpc,
-                instance_type=ec2.InstanceType.of(
-                    ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.NANO
-                ),
-                machine_image=ec2.AmazonLinuxImage(
-                    generation=ec2.AmazonLinuxGeneration.AMAZON_LINUX_2,
-                    storage=ec2.AmazonLinuxStorage.GENERAL_PURPOSE,
-                ),
-                vpc_subnets=ec2.SubnetSelection(
-                    subnet_type=SubnetType.PRIVATE,
-                    availability_zones=[f"{self.region}b"],
-                ),
-                signals=autoscaling.Signals.wait_for_all(),
-                role=self.bastion_role,
-                key_name=props.get("ssh_key_name") or None,
-                block_devices=[root_volume],
-                allow_all_outbound=False,
-                security_group=self.sg_bastion 
-            )
             # # Add ECS Cluster
             fargate_spot_strategy = ecs.CfnCluster.CapacityProviderStrategyItemProperty(
                 capacity_provider="FARGATE_SPOT", weight=100
@@ -189,8 +155,8 @@ class GitlabCiFargateRunnerStack(cdk.Stack):
             )
             self.fargate_cluster = ecs.CfnCluster(
                 self,
-                f"{self.stack_name}-cluser",
-                cluster_name=f"{self.stack_name}-cluser",
+                f"{self.stack_name}-cluster",
+                cluster_name=f"{self.stack_name}-cluster",
                 capacity_providers=["FARGATE", "FARGATE_SPOT"],
                 default_capacity_provider_strategy=[
                     fargate_spot_strategy,
@@ -199,158 +165,107 @@ class GitlabCiFargateRunnerStack(cdk.Stack):
                 cluster_settings=[enbale_containerInsights],
             )
 
+            # Add Fargate task definition
+            gitlab_runner = DockerImageAsset(
+                self,
+                "GitlabRunnerImage",
+                directory="./gitlab_ci_fargate_runner/docker_fargate_driver",
+                build_args={
+                    "GITLAB_RUNNER_VERSION": props.get("gitlab_runner_version")
+                }
+            )
+
+            runner_environment = [
+                ecs.CfnTaskDefinition.KeyValuePairProperty(
+                    name="FARGATE_CLUSTER", value=f"{self.stack_name}-cluster"),
+                ecs.CfnTaskDefinition.KeyValuePairProperty(
+                    name="FARGATE_REGION", value=self.region),
+                ecs.CfnTaskDefinition.KeyValuePairProperty(
+                    name="FARGATE_SECURITY_GROUP", value=self.sg_runner.security_group_id),
+                ecs.CfnTaskDefinition.KeyValuePairProperty(
+                    name="RUNNER_TAG_LIST", value=props.get("runner_tags")),
+                ecs.CfnTaskDefinition.KeyValuePairProperty(
+                    name="CACHE_BUCKET", value=self.cache_bucket.bucket_name),
+                ecs.CfnTaskDefinition.KeyValuePairProperty(
+                    name="CACHE_BUCKET_REGION", value=self.region)
+            ]
+
+            runner_secrets = [ecs.CfnTaskDefinition.SecretProperty(
+                name="GITLAB_REGISTRATION_TOKEN",
+                value_from=ecs.Secret.from_secrets_manager(
+                    self.gitlab_token_secret, "token"
+                ).arn
+            )]
+
             awslogs_driver = ecs.CfnTaskDefinition.LogConfigurationProperty(
                 log_driver="awslogs",
                 options={
-                    "awslogs-group": "/Gitlab/Runner/",
+                    "awslogs-group": self.log_group.log_group_name,
                     "awslogs-region": self.region,
                     "awslogs-stream-prefix": "fargate",
                 },
             )
-            # SSM parameter to cloudwatch agent log
-            with open("./config/cloudwatch_agent.json", "r") as cloudwatch_agent_config:
-                cloud_watch_config_param = ssm.StringParameter(
-                    self,
-                    "CloudWatchAgentConfig",
-                    string_value=cloudwatch_agent_config.read(),
-                    description="CLoudwatch agent config",
-                )
-            cloudwatch_agent_config.close
-            cloud_watch_config_param.grant_read(self.bastion_role)
+            port_mappings = [
+                ecs.CfnTaskDefinition.PortMappingProperty(container_port=22)
+            ]
+            runner = ecs.CfnTaskDefinition.ContainerDefinitionProperty(
+                name="gitlab-runner",
+                image=gitlab_runner.image_uri,
+                port_mappings=port_mappings,
+                log_configuration=awslogs_driver,
+                environment=runner_environment,
+                secrets=runner_secrets,
+                linux_parameters=ecs.CfnTaskDefinition.LinuxParametersProperty(
+                    init_process_enabled=True,
+                ),
+                interactive=True
+            )
 
-            self.addLauncheConfiguration(asg_1a, props, "a", cloud_watch_config_param.parameter_name)
-            self.addLauncheConfiguration(asg_1b, props, "b", cloud_watch_config_param.parameter_name)
+            self.fargate_task_definition = ecs.CfnTaskDefinition(
+                self,
+                'GitlabRunnerTaskDefinition',
+                family="gitlab-runner",
+                cpu=str(props.get("task_definition_cpu", 256)),
+                memory=str(props.get("task_definition_memory", 512)),
+                network_mode="awsvpc",
+                task_role_arn=self.fargate_task_role.role_arn,
+                execution_role_arn=self.fargate_execution_role.role_arn,
+                container_definitions=[runner]
+            )
+
+            self.gitlab_service = ecs.CfnService(
+                self,
+                "GitlabRunnerService",
+                cluster=self.fargate_cluster.ref,
+                task_definition=self.fargate_task_definition.ref,
+                deployment_configuration=ecs.CfnService.DeploymentConfigurationProperty(
+                    deployment_circuit_breaker=ecs.CfnService.DeploymentCircuitBreakerProperty(
+                        enable=False,
+                        rollback=False
+                    ),
+                    maximum_percent=100,
+                    minimum_healthy_percent=0
+                ),
+                deployment_controller=ecs.CfnService.DeploymentControllerProperty(
+                    type="ECS"
+                ),
+                desired_count=props.get("desired_count",1),
+                enable_ecs_managed_tags=True,
+                enable_execute_command=True,
+                network_configuration=ecs.CfnService.NetworkConfigurationProperty(
+                    awsvpc_configuration=ecs.CfnService.AwsVpcConfigurationProperty(
+                        subnets=self.vpc.select_subnets(
+                            subnet_type=ec2.SubnetType.PRIVATE_WITH_NAT).subnet_ids,
+                        security_groups=[self.sg_runner.security_group_id]
+                    )
+                ),
+
+            )
+
             self.output_props = props.copy()
             self.output_props["vpc"] = self.vpc
-            # self.output_props["fargate_task_definition"] = self.fargate_task_definition
+            self.output_props["log_group_name"] = self.log_group.log_group_name
 
-        except:
-            print("Unexpected error:", sys.exc_info()[0])
-            raise
-
-    # ----------------------------------------------------
-    # Methode to add launch template to autoscaling group
-    # ----------------------------------------------------
-    def addLauncheConfiguration(self, asg: autoscaling, props, az, cloudwatch_agent_config_ssm_param_name):
-        subnet_id = ""
-
-        userdata_env_mappings = {
-            "__ACCOUNT_ID__": self.account,
-            "__REGION__": self.region,
-            "__GITLAB_SERVER__": props.get("gitlab_server"),
-            "__RUNNER_NAME__": f"{self.stack_name}-{az}-runner",
-            "__GITLAB_RUNNER_TOKEN_SECRET_NAME__": props.get(
-                "gitlab_runner_token_secret_name"
-            ),
-            "__GITLAB_RUNNER_TAGS__": props.get("runner_tags"),
-            "__GITLAB_LOG_OUTPUT_LIMIT__": props.get("runner_log_output_limit"),
-            "__SSM_CLOUDWATCH_AGENT_CONFIG__": cloudwatch_agent_config_ssm_param_name,
-            "__CACHE_BUCKET__": self.cache_bucket.bucket_name,
-            "__GITLAB_RUNNER_VERSION__": props.get("gitlab_runner_version"),
-        }
-        with open(
-            "./gitlab_ci_fargate_runner/user_data/register.sh", "r"
-        ) as user_data_h:
-            # Use a substitution
-            user_data_sub = core.Fn.sub(user_data_h.read(), userdata_env_mappings)
-            app_user_data = ec2.UserData.custom(user_data_sub)
-        user_data_h.close
-
-        subnet_ids = self.vpc.select_subnets(
-            subnet_type=ec2.SubnetType.PRIVATE,
-            availability_zones=[f"{self.region}{az}"],
-        ).subnet_ids
-        if subnet_ids:
-            subnet_id = subnet_ids[0]
-        try:
-            gitlab_env_mappings = {
-                "__ACCOUNT_ID__": self.account,
-                "__REGION__": self.region,
-                "__ECS_CLUSTER__": f"{self.stack_name}-cluser",
-                "__SUBNET_ID__": subnet_id,
-                "__CONCURRENT_JOBS__": str(props.get("concurrent_jobs")),
-                "__SECURITY_GROUP_ID__": self.sg_bastion.security_group_id,
-                "__TASK_DEFINITION__": "to_be_exported",
-                "__SSH_USERNAME__": props.get("default_ssh_username"),
-            }
-            with open("./config/fargate.toml", "r") as gitlab_fargate_h:
-                gitlab_fargate_sub = core.Fn.sub(
-                    gitlab_fargate_h.read(), gitlab_env_mappings
-                )
-            gitlab_fargate_h.close
-
-            with open("./config/config.toml", "r") as gitlab_config_h:
-                gitlab_config_sub = core.Fn.sub(
-                    gitlab_config_h.read(), gitlab_env_mappings
-                )
-            gitlab_config_h.close
-
-            asg_cloudformation_init_configsets = ec2.CloudFormationInit.from_config_sets(
-                config_sets={"default": ["setup", "packages", "config", "register"]},
-                configs={
-                    "setup": ec2.InitConfig(
-                        [
-                            # add gitlab runner repo
-                            ec2.InitCommand.shell_command(
-                                "curl -s https://packages.gitlab.com/install/repositories/runner/gitlab-runner/script.rpm.sh|  bash",
-                                key="add_gitlab_runner_repo",
-                            ),
-                        ]
-                    ),
-                    "packages": ec2.InitConfig(
-                        [
-                            # Install an Amazon Linux package using yum
-                            ec2.InitPackage.yum(
-                                f"gitlab-runner-{props.get('gitlab_runner_version')}"
-                            )
-                        ]
-                    ),
-                    "config": ec2.InitConfig(
-                        [
-                            # ec2.InitGroup.from_name("gitlab-runner"),
-                            # ec2.InitUser.from_name("gitlab-runner"),
-                            ec2.InitFile.from_string(
-                                "/etc/gitlab-runner/config.toml",
-                                gitlab_config_sub,
-                                group="root",
-                                owner="root",
-                                mode="0644",
-                            ),
-                            ec2.InitFile.from_string(
-                                "/etc/gitlab-runner/fargate.toml",
-                                gitlab_fargate_sub,
-                                group="root",
-                                owner="root",
-                                mode="0644",
-                            ),
-                            ec2.InitFile.from_file_inline(
-                                "/etc/systemd/system/gitlab-runner.service",
-                                "./gitlab_ci_fargate_runner/services/gitlab-runner.service",
-                                group="root",
-                                owner="root",
-                                mode="0644",
-                            ),
-                            ec2.InitFile.from_string(
-                                "/etc/rsyslog.d/25-gitlab-runner.conf",
-                                ':programname, isequal, "gitlab-runner" /var/log/gitlab-runner.log',
-                                group="root",
-                                owner="root",
-                                mode="0644",
-                            ),
-                        ]
-                    ),
-                    "register": ec2.InitConfig(
-                        [
-                            ec2.InitCommand.shell_command(
-                                user_data_sub, key="register-runner"
-                            )
-                        ]
-                    ),
-                },
-            )
-            asg.apply_cloud_formation_init(
-                asg_cloudformation_init_configsets, print_log=True
-            )
         except:
             print("Unexpected error:", sys.exc_info()[0])
             raise

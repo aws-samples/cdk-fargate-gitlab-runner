@@ -1,16 +1,30 @@
 ---
 # Gitlab fargate runner stack parameters
-app_name: gitlab-ci-fargate-runner
+app_name: Gitlabrunner
 bastion:
-  gitlab_runner_version: 14.2.0-1
-  VpcId: 
+  gitlab_runner_version: "14.5.1" 
+  desired_count: 1 #Default 1
+  cpu: "512" # put here the cpu size of the Fargate task definition
+  memory: "1024" # put here the memory size of the Fargate task definition
   gitlab_server: gitlab.com # modify with gitlab server
-  gitlab_runner_token_secret_name: # Put here the name of the gitlab tokensecret name stored in secret manager
-  runner_tags: # put here liset of  tags of gitlab runner
-  runner_log_output_limit: "4096"
-  concurrent_jobs: # put here the desired concurent jobs
+  concurrent_jobs: 2 # put here the desired concurent jobs
   default_ssh_username: root
-  docker_image_name: # put here the defaul docker image to use
-  task_definition_cpu: "512" # put here the cpu size of the Fargate task definition
-  task_definition_memory: "1024" # put here the memory size of the Fargate task definition
+  gitlab_runner_token_secret_name: my_secret # Put here the name of the gitlab tokensecret name stored in secret manager
+  log_group_name: /Gitlab/Runner/ # Name of the log group Default: "/Gitlab/Runners/"
+  runner_log_output_limit: "4096"
+  runner_tags: my_tag # put here liset of tags of gitlab runner
+  VpcId: vpc-012345azert23 # Your VpcID
+  stack_name: #Name of your Cloudformation Stack 
+task_definition:
+  gitlab_runner_version: "14.5.1"
+  cpu: "512" # put here the cpu size of the Fargate task definition
+  docker_image_name: python # put here the defaul docker image to use
+  managed_policies: [] # Put here a managed policy to use at gitlab job execution. Default to None
+  memory: "1024" # put here the memory size of the Fargate task definition
+  iam_policy_template: # path to a .j2 template policy to add to task_definition execution role. Default to None
+  log_group_name: /Gitlab/Runner/ # Name of the log group Default: "/Gitlab/TaskDefinitions/{docker_image_name}/"
+  stack_name: #Name of your Cloudformation Stack 
+tags: # Put tags as key: value pair
+  ProjectName: Demo
+  CostCenter: IT
 ...
