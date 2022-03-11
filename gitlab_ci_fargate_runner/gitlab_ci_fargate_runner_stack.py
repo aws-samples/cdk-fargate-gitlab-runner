@@ -187,7 +187,9 @@ class GitlabCiFargateRunnerStack(cdk.Stack):
                 ecs.CfnTaskDefinition.KeyValuePairProperty(
                     name="CACHE_BUCKET", value=self.cache_bucket.bucket_name),
                 ecs.CfnTaskDefinition.KeyValuePairProperty(
-                    name="CACHE_BUCKET_REGION", value=self.region)
+                    name="CACHE_BUCKET_REGION", value=self.region),
+                ecs.CfnTaskDefinition.KeyValuePairProperty(
+                    name="GITLAB_URL", value=f'https://{props.get("gitlab_server")}')
             ]
 
             runner_secrets = [ecs.CfnTaskDefinition.SecretProperty(
