@@ -30,20 +30,10 @@
 # -----------------------------------------------------------------------------
 
 get_from_metadata() {
-    # Query the unique security credentials generated for the task.
-    # https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-iam-roles.html
-    AWS_CREDENTIALS=$(curl -s 169.254.170.2${AWS_CONTAINER_CREDENTIALS_RELATIVE_URI})
-
-    # Read the `AccessKeyId`, `SecretAccessKey`, and `Token` values.
-    export AWS_ACCESS_KEY_ID=$(echo $AWS_CREDENTIALS | jq '.AccessKeyId' --raw-output)
-    export AWS_SECRET_ACCESS_KEY=$(echo $AWS_CREDENTIALS | jq '.SecretAccessKey' --raw-output)
-    export AWS_SESSION_TOKEN=$(echo $AWS_CREDENTIALS | jq '.Token' --raw-output)
-
     # Default to https://gitlab.com if the GitLab URL was not specified
     export GITLAB_URL=${GITLAB_URL:=https://gitlab.com}
 
     AWS_METADATA=$(curl -s ${ECS_CONTAINER_METADATA_URI_V4}/task)
-    # Find useful informations through metadata endpoint
     export CONTAINER_AZ=$(echo ${AWS_METADATA} | jq -r .AvailabilityZone)
     export CLUSTER_ARN=$(echo ${AWS_METADATA}  | jq -r  .Cluster)
     export TASK_ARN=$(echo ${AWS_METADATA} | jq -r .TaskARN)
