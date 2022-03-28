@@ -52,8 +52,32 @@ class GitlabCiFargateRunnerStack(cdk.Stack):
                 encryption=s3.BucketEncryption.KMS_MANAGED,
                 removal_policy=cdk.RemovalPolicy.DESTROY,
                 enforce_ssl=True,
+                auto_delete_objects=True
             )
             self.cache_bucket = cachebucket
+
+            # # Add ECS Cluster
+            fargate_spot_strategy = ecs.CfnCluster.CapacityProviderStrategyItemProperty(
+                capacity_provider="FARGATE_SPOT", weight=100
+            )
+            fargate_strategy = ecs.CfnCluster.CapacityProviderStrategyItemProperty(
+                capacity_provider="FARGATE", weight=10
+            )
+            enbale_containerInsights = ecs.CfnCluster.ClusterSettingsProperty(
+                name="containerInsights", value="enabled"
+            )
+            self.fargate_cluster = ecs.CfnCluster(
+                self,
+                f"{self.stack_name}-cluster",
+                cluster_name=f"{self.stack_name}-cluster",
+                capacity_providers=["FARGATE", "FARGATE_SPOT"],
+                default_capacity_provider_strategy=[
+                    fargate_spot_strategy,
+                    fargate_strategy,
+                ],
+                cluster_settings=[enbale_containerInsights],
+            )
+
 
             # IAM Roles
 
@@ -84,8 +108,7 @@ class GitlabCiFargateRunnerStack(cdk.Stack):
                 ],
                 inline_policies=self.fargate_execution_role_policies
             )
-
-            self.fargate_task_role_policies = {
+            self.fargate_service_task_role_policies = {
                 "FargateTask": iam.PolicyDocument(
                     statements=[
                         iam.PolicyStatement(
@@ -97,6 +120,21 @@ class GitlabCiFargateRunnerStack(cdk.Stack):
                                 "s3:DeleteObject",
                             ],
                             resources=[f"{self.cache_bucket.bucket_arn}/*"],
+                        ),
+                        iam.PolicyStatement(
+                            effect=iam.Effect.ALLOW,
+                            actions=[
+                                "ecs:DescribeTasks",
+                                "ecs:RunTask"
+                            ],
+                            resources=["*"]
+                        ),
+                        iam.PolicyStatement(
+                            effect=iam.Effect.ALLOW,
+                            actions=[
+                                "iam:PassRole"
+                            ],
+                            resources=[f'arn:aws:iam::{self.account}:role/*-GitlabExecutionRole*']
                         )
                     ]
                 )
@@ -106,16 +144,16 @@ class GitlabCiFargateRunnerStack(cdk.Stack):
 
             # Create IAM roles
 
-            self.fargate_task_role = iam.Role(
+            self.fargate_service_task_role = iam.Role(
                 self,
                 "GitlabRunnerTaskRole",
                 assumed_by=iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
-                managed_policies=[
-                    iam.ManagedPolicy.from_aws_managed_policy_name(
-                        "AmazonECS_FullAccess"
-                    )
-                ],
-                inline_policies=self.fargate_task_role_policies,
+                # managed_policies=[
+                #     iam.ManagedPolicy.from_aws_managed_policy_name(
+                #         "AmazonECSTaskExecutionRolePolicy"
+                #     )
+                # ],
+                inline_policies=self.fargate_service_task_role_policies,
             )
 
             # Create LogGroup
@@ -141,28 +179,6 @@ class GitlabCiFargateRunnerStack(cdk.Stack):
             )
             self.sg_runner.add_egress_rule(
                 peer=ec2.Peer.any_ipv4(), connection=ec2.Port.tcp(80)
-            )
-
-            # # Add ECS Cluster
-            fargate_spot_strategy = ecs.CfnCluster.CapacityProviderStrategyItemProperty(
-                capacity_provider="FARGATE_SPOT", weight=100
-            )
-            fargate_strategy = ecs.CfnCluster.CapacityProviderStrategyItemProperty(
-                capacity_provider="FARGATE", weight=10
-            )
-            enbale_containerInsights = ecs.CfnCluster.ClusterSettingsProperty(
-                name="containerInsights", value="enabled"
-            )
-            self.fargate_cluster = ecs.CfnCluster(
-                self,
-                f"{self.stack_name}-cluster",
-                cluster_name=f"{self.stack_name}-cluster",
-                capacity_providers=["FARGATE", "FARGATE_SPOT"],
-                default_capacity_provider_strategy=[
-                    fargate_spot_strategy,
-                    fargate_strategy,
-                ],
-                cluster_settings=[enbale_containerInsights],
             )
 
             # Add Fargate task definition
@@ -223,14 +239,14 @@ class GitlabCiFargateRunnerStack(cdk.Stack):
                 interactive=True
             )
 
-            self.fargate_task_definition = ecs.CfnTaskDefinition(
+            self.fargate_service_task_definition = ecs.CfnTaskDefinition(
                 self,
                 'GitlabRunnerTaskDefinition',
                 family="gitlab-runner",
                 cpu=str(props.get("task_definition_cpu", 256)),
                 memory=str(props.get("task_definition_memory", 512)),
                 network_mode="awsvpc",
-                task_role_arn=self.fargate_task_role.role_arn,
+                task_role_arn=self.fargate_service_task_role.role_arn,
                 execution_role_arn=self.fargate_execution_role.role_arn,
                 container_definitions=[runner]
             )
@@ -239,7 +255,7 @@ class GitlabCiFargateRunnerStack(cdk.Stack):
                 self,
                 "GitlabRunnerService",
                 cluster=self.fargate_cluster.ref,
-                task_definition=self.fargate_task_definition.ref,
+                task_definition=self.fargate_service_task_definition.ref,
                 deployment_configuration=ecs.CfnService.DeploymentConfigurationProperty(
                     deployment_circuit_breaker=ecs.CfnService.DeploymentCircuitBreakerProperty(
                         enable=False,

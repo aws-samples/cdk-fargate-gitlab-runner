@@ -58,16 +58,6 @@ env = cdk.Environment(
 for k,v in props.get("tags",{}).items():
     cdk.Tags.of(app).add(key=k,value=v)
 
-
-if app.node.try_get_context("BastionStackName"):
-    props["bastion"]["stack_name"] = app.node.try_get_context("BastionStackName")
-else:
-    props["bastion"]["stack_name"] = f'{props["app_name"]}BastionStack'
-
-GitlabCiFargateRunnerStack(
-    app, props["bastion"]["stack_name"], env=env, props=props.get("bastion")
-)
-
 if app.node.try_get_context("DockerImageName"):
     props["task_definition"]["docker_image_name"] = app.node.try_get_context("DockerImageName")
 if app.node.try_get_context("Memory"):
@@ -87,4 +77,12 @@ TaskDefinitionStack(
     app, props["task_definition"]["stack_name"], env=env, props=props.get("task_definition")
 )
 
+if app.node.try_get_context("BastionStackName"):
+    props["bastion"]["stack_name"] = app.node.try_get_context("BastionStackName")
+else:
+    props["bastion"]["stack_name"] = f'{props["app_name"]}BastionStack'
+
+GitlabCiFargateRunnerStack(
+    app, props["bastion"]["stack_name"], env=env, props=props.get("bastion")
+)
 app.synth()
