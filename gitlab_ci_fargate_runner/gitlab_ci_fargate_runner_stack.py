@@ -125,7 +125,8 @@ class GitlabCiFargateRunnerStack(cdk.Stack):
                             effect=iam.Effect.ALLOW,
                             actions=[
                                 "ecs:DescribeTasks",
-                                "ecs:RunTask"
+                                "ecs:RunTask",
+                                "ecs:StopTask"
                             ],
                             resources=["*"]
                         ),
