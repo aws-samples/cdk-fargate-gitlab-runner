@@ -61,9 +61,9 @@ for k,v in props.get("tags",{}).items():
 if app.node.try_get_context("DockerImageName"):
     props["task_definition"]["docker_image_name"] = app.node.try_get_context("DockerImageName")
 if app.node.try_get_context("Memory"):
-    props["task_definition"]["memory"] = app.node.try_get_context("Memory")
+    props["task_definition"]["task_definition_memory"] = app.node.try_get_context("Memory")
 if app.node.try_get_context("CPU"):
-    props["task_definition"]["cpu"] = app.node.try_get_context("CPU")
+    props["task_definition"]["task_definition_cpu"] = app.node.try_get_context("CPU")
 if app.node.try_get_context("TaskManagedPolicies"):
     props["task_definition"]["managed_policies"] = app.node.try_get_context("TaskManagedPolicies").split(",")
 if app.node.try_get_context("TaskInlinePolicy"):
